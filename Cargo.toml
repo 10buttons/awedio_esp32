@@ -1,0 +1,14 @@
+[package]
+name = "awedio_esp32"
+version = "0.1.0"
+edition = "2021"
+authors = ["Ben Hansen <bh@benhansen.io>"]
+description = "ESP32 backend for the awedio audio playback library"
+license = "MIT OR Apache-2.0"
+keywords = ["audio", "playback", "backend"]
+categories = ["multimedia::audio", "embedded"]
+repository = "https://github.com/10buttons/awedio_esp32"
+
+[dependencies]
+esp-idf-sys = { version = "0.32", default-features = false, features = ["native"] }
+awedio = { version = "0.1", default-features = false}
