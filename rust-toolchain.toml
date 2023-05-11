@@ -1,3 +1,4 @@
 [toolchain]
 
 channel = "esp"
+# You may want to use nightly or stable for riscv targets
