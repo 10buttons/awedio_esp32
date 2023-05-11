@@ -1,7 +1,9 @@
 # Changelog
 
-## 0.1.3 - 2023-05-11
+## 0.2.0 - 2023-05-11
 
+- add comment to rust-toolchain
+- update README
 - update awedio to v0.2
 
 ## 0.1.2 - 2023-05-10
