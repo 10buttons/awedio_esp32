@@ -1,4 +1,4 @@
-# Tedio &emsp; [![Docs Passing]][docs.rs] [![Latest Version]][crates.io]
+# Awedio ESP32 &emsp; [![Latest Version]][crates.io]
 
 ESP32 I2S backend for the [awedio] audio playback library using ESP-IDF.
 Requires std.
@@ -84,6 +84,4 @@ be dual licensed as above, without any additional terms or conditions.
 
 [Latest Version]: https://img.shields.io/crates/v/awedio_esp32.svg
 [crates.io]: https://crates.io/crates/awedio_esp32
-[Docs Passing]: https://img.shields.io/docsrs/awedio_esp32.svg
-[docs.rs]: https://docs.rs/awedio_esp32
 [awedio]: https://docs.rs/awedio
