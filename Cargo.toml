@@ -1,6 +1,6 @@
 [package]
 name = "awedio_esp32"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["Ben Hansen <bh@benhansen.io>"]
 description = "ESP32 backend for the awedio audio playback library"
@@ -16,3 +16,4 @@ awedio = { version = "0.1", default-features = false}
 [package.metadata.docs.rs]
 default-target = "riscv32imc-esp-espidf"
 targets = []
+cargo-args = ["-Z", "build-std"]
