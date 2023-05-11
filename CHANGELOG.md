@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3 - 2023-05-11
+
+- update awedio to v0.2
+
 ## 0.1.2 - 2023-05-10
 
 - Add build-std to docs.rs metadata.
