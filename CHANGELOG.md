@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- add report-render-time cargo feature
+
 ## 0.2.0 - 2023-05-11
 
 - add comment to rust-toolchain

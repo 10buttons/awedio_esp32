@@ -4,6 +4,9 @@
 use awedio::{manager::Manager, manager::Renderer, Sound};
 use std::ffi::c_void;
 use std::ptr::null_mut;
+use std::time::Duration;
+#[cfg(feature = "report-render-time")]
+use std::time::Instant;
 
 /// An ESP32 backend for the I2S peripheral for ESP-IDF.
 #[derive(Copy, Clone)]
@@ -102,13 +105,23 @@ extern "C" fn audio_task(arg: *mut c_void) {
     let channel_count = task_args.backend.channel_count as usize;
     let sample_rate = task_args.backend.sample_rate;
     let num_frames_per_write = task_args.backend.num_frames_per_write;
-    let buf_len = num_frames_per_write * channel_count * SAMPLE_SIZE;
+    let buf_entries = num_frames_per_write * channel_count;
+    let buf_len = buf_entries * SAMPLE_SIZE;
     let mut buf = vec![0_u8; buf_len];
-    let pause_time = std::time::Duration::from_micros(
-        num_frames_per_write as u64 * 1_000_000 / sample_rate as u64,
-    );
+    let pause_time =
+        Duration::from_micros(num_frames_per_write as u64 * 1_000_000 / sample_rate as u64);
     let mut stopped = false;
+
+    #[cfg(feature = "report-render-time")]
+    let mut render_time_since_report = Duration::ZERO;
+    #[cfg(feature = "report-render-time")]
+    let mut samples_rendered_since_report = 0;
+    #[cfg(feature = "report-render-time")]
+    let mut last_report = Instant::now();
+
     loop {
+        #[cfg(feature = "report-render-time")]
+        let start = Instant::now();
         task_args.renderer.on_start_of_batch();
         let mut paused = false;
         let mut finished = false;
@@ -146,6 +159,30 @@ extern "C" fn audio_task(arg: *mut c_void) {
                 stopped = false;
                 unsafe { esp_idf_sys::i2s_start(i2s_port_num) };
             }
+
+            #[cfg(feature = "report-render-time")]
+            {
+                let end = Instant::now();
+                render_time_since_report += end.duration_since(start);
+                samples_rendered_since_report += buf_entries;
+                if end.duration_since(last_report) > Duration::from_secs(1) {
+                    let budget_micros = samples_rendered_since_report as f32 * 1_000_000.0
+                        / sample_rate as f32
+                        / channel_count as f32;
+                    let percent_budget =
+                        render_time_since_report.as_micros() as f32 / budget_micros * 100.0;
+                    println!(
+                        "Rendered {:6} frames in {:4}ms ({:.1}% of budget)",
+                        samples_rendered_since_report,
+                        render_time_since_report.as_millis(),
+                        percent_budget
+                    );
+                    render_time_since_report = Duration::ZERO;
+                    samples_rendered_since_report = 0;
+                    last_report = end;
+                }
+            }
+
             let mut bytes_written: usize = 0;
             let result = unsafe {
                 esp_idf_sys::i2s_write(

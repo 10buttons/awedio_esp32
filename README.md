@@ -72,6 +72,10 @@ Built for creating activities for [10 Buttons](https://www.10Buttons.com), a
 screen-less tablet for kids. Purposefully kept generic to be usable in other
 contexts.
 
+## Features
+
+* report-render-time: Print to stdout stats about rendering time.
+
 ## License
 
 This project is licensed under either of

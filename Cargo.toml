@@ -13,6 +13,9 @@ repository = "https://github.com/10buttons/awedio_esp32"
 esp-idf-sys = { version = "0.32", default-features = false, features = ["native"] }
 awedio = { version = "0.2", default-features = false}
 
+[features]
+report-render-time = []
+
 [package.metadata.docs.rs]
 default-target = "riscv32imc-esp-espidf"
 targets = []
