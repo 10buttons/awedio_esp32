@@ -103,13 +103,9 @@ extern "C" fn audio_task(arg: *mut c_void) {
     let mut task_args: Box<TaskArgs> = unsafe { Box::from_raw(arg as *mut TaskArgs) };
     let i2s_port_num = task_args.backend.i2s_port_num;
     let channel_count = task_args.backend.channel_count as usize;
-    let sample_rate = task_args.backend.sample_rate;
     let num_frames_per_write = task_args.backend.num_frames_per_write;
-    let buf_entries = num_frames_per_write * channel_count;
-    let buf_len = buf_entries * SAMPLE_SIZE;
-    let mut buf = vec![0_u8; buf_len];
-    let pause_time =
-        Duration::from_micros(num_frames_per_write as u64 * 1_000_000 / sample_rate as u64);
+    let mut buf = vec![0_i16; num_frames_per_write * channel_count];
+    let pause_time = Duration::from_millis(20);
     let mut stopped = false;
 
     #[cfg(feature = "report-render-time")]
@@ -123,10 +119,12 @@ extern "C" fn audio_task(arg: *mut c_void) {
         #[cfg(feature = "report-render-time")]
         let start = Instant::now();
         task_args.renderer.on_start_of_batch();
+        #[cfg(feature = "report-render-time")]
+        let end_start_of_batch = Instant::now();
         let mut paused = false;
         let mut finished = false;
         let mut have_data = true;
-        for i in 0..(num_frames_per_write * channel_count) {
+        for i in 0..buf.len() {
             let sample = match task_args.renderer.next_sample() {
                 awedio::NextSample::Sample(s) => s,
                 awedio::NextSample::MetadataChanged => {
@@ -150,9 +148,7 @@ extern "C" fn audio_task(arg: *mut c_void) {
                 }
             };
 
-            let start_byte = i * SAMPLE_SIZE;
-            buf[(start_byte)..(start_byte + SAMPLE_SIZE)]
-                .copy_from_slice(sample.to_le_bytes().as_slice());
+            buf[i] = sample;
         }
         if have_data {
             if stopped {
@@ -163,16 +159,18 @@ extern "C" fn audio_task(arg: *mut c_void) {
             #[cfg(feature = "report-render-time")]
             {
                 let end = Instant::now();
-                render_time_since_report += end.duration_since(start);
-                samples_rendered_since_report += buf_entries;
+                let start_of_batch_time = end_start_of_batch.duration_since(start);
+                render_time_since_report += end.duration_since(end_start_of_batch);
+                samples_rendered_since_report += buf.len();
                 if end.duration_since(last_report) > Duration::from_secs(1) {
                     let budget_micros = samples_rendered_since_report as f32 * 1_000_000.0
-                        / sample_rate as f32
+                        / task_args.backend.sample_rate as f32
                         / channel_count as f32;
                     let percent_budget =
                         render_time_since_report.as_micros() as f32 / budget_micros * 100.0;
                     println!(
-                        "Rendered {:6} frames in {:4}ms ({:.1}% of budget)",
+                        "Start of batch took {:4}ms. Rendered {:6} frames in {:4}ms. Total {:.1}% of budget.",
+                        start_of_batch_time.as_millis(),
                         samples_rendered_since_report,
                         render_time_since_report.as_millis(),
                         percent_budget
@@ -188,14 +186,14 @@ extern "C" fn audio_task(arg: *mut c_void) {
                 esp_idf_sys::i2s_write(
                     i2s_port_num,
                     buf.as_ptr() as *const c_void,
-                    buf.len().try_into().unwrap(),
+                    buf.len() * SAMPLE_SIZE,
                     &mut bytes_written as *mut _,
                     u32::MAX,
                 )
             };
             assert!(result == esp_idf_sys::ESP_OK, "error writing i2s data");
             assert!(
-                bytes_written as usize == buf.len(),
+                bytes_written as usize == buf.len() * SAMPLE_SIZE,
                 "not all bytes written in i2s_write call"
             )
         }

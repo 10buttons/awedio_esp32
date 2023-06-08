@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-- add report-render-time cargo feature
+- feat: add report-render-time cargo feature
+
+- refactor: switch buffer from u8 to i16
 
 ## 0.2.0 - 2023-05-11
 
