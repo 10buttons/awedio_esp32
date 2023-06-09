@@ -34,19 +34,22 @@ impl Esp32Backend {
     /// New backend with some defaults of:
     ///
     /// `i2s_port_num`: 0
-    /// `num_frames_per_write`: 512
     /// `stack_size`: 30,000
     /// `task_priority`: 19
     /// `pinned_core_id`: tskNO_AFFINITY,
     ///
     /// Stack size can be substantially lower if not decoding MP3s. This should
     /// be improved in the future.
-    pub fn with_defaults(channel_count: u16, sample_rate: u32) -> Self {
+    pub fn with_defaults(
+        channel_count: u16,
+        sample_rate: u32,
+        num_frames_per_write: usize,
+    ) -> Self {
         Self {
             channel_count,
             sample_rate,
             i2s_port_num: 0,
-            num_frames_per_write: 512,
+            num_frames_per_write,
             stack_size: 30000,
             task_priority: 19,
             pinned_core_id: esp_idf_sys::tskNO_AFFINITY as i32,

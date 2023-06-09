@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- refactor!: do not set a default for num_frames_per_write
+
 - feat: add report-render-time cargo feature
 
 - refactor: switch buffer from u8 to i16
