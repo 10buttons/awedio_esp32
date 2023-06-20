@@ -27,7 +27,7 @@ pub struct Esp32Backend {
     pub task_priority: u32,
     /// Whether the FreeRTOS task should be pinned to a core and if so what
     /// core.
-    pinned_core_id: i32,
+    pub pinned_core_id: i32,
 }
 
 impl Esp32Backend {
