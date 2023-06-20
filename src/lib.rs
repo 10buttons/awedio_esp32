@@ -82,7 +82,7 @@ impl Esp32Backend {
         let res = unsafe {
             esp_idf_sys::xTaskCreatePinnedToCore(
                 Some(audio_task),
-                "TedioAudioBackend\0".as_bytes().as_ptr() as *const i8,
+                "AwedioBackend\0".as_bytes().as_ptr() as *const i8,
                 self.stack_size,
                 Box::into_raw(args) as *mut c_void,
                 self.task_priority,

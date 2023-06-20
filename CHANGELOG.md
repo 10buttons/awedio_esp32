@@ -4,6 +4,8 @@
 
 - refactor!: do not set a default for num_frames_per_write
 
+- fix: use new name of library in task name
+- feat: make pinned_core_id public so Backend struct can be instantiated
 - feat: add report-render-time cargo feature
 
 - refactor: switch buffer from u8 to i16
