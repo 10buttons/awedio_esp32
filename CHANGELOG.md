@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 - 2023-11-14
 
 - refactor!: use thread spawn instead of creating a task
 - feat!: update to ESP-IDF v5 and new I2S API in hal
