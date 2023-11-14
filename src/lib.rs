@@ -2,12 +2,10 @@
 #![doc = include_str!("../README.md")]
 
 use esp_idf_hal as hal;
-use esp_idf_hal::sys;
 
 use awedio::{manager::Manager, manager::Renderer, Sound};
 use hal::delay::TickType;
-use std::ffi::c_void;
-use std::ptr::null_mut;
+use hal::task::thread::ThreadSpawnConfiguration;
 use std::time::Duration;
 #[cfg(feature = "report-render-time")]
 use std::time::Instant;
@@ -30,7 +28,7 @@ pub struct Esp32Backend {
     pub task_priority: u32,
     /// Whether the FreeRTOS task should be pinned to a core and if so what
     /// core.
-    pub pinned_core_id: i32,
+    pub pin_to_core: Option<hal::cpu::Core>,
 }
 
 impl Esp32Backend {
@@ -39,7 +37,7 @@ impl Esp32Backend {
     /// `i2s_port_num`: 0
     /// `stack_size`: 30,000
     /// `task_priority`: 19
-    /// `pinned_core_id`: tskNO_AFFINITY,
+    /// `pin_to_core`: None,
     ///
     /// Stack size can be substantially lower if not decoding MP3s. This should
     /// be improved in the future.
@@ -56,14 +54,9 @@ impl Esp32Backend {
             num_frames_per_write,
             stack_size: 30000,
             task_priority: 19,
-            pinned_core_id: sys::tskNO_AFFINITY as i32,
+            pin_to_core: None,
         }
     }
-}
-
-struct TaskArgs {
-    backend: Esp32Backend,
-    renderer: Renderer,
 }
 
 impl Esp32Backend {
@@ -77,41 +70,33 @@ impl Esp32Backend {
         let awedio::NextSample::MetadataChanged = renderer.next_sample() else {
             panic!("MetadataChanged expected but not received.");
         };
-        let stack_size = self.stack_size;
-        let task_priority = self.task_priority;
-        let pinned_core_id = self.pinned_core_id;
-        let args = Box::new(TaskArgs {
-            backend: self,
-            renderer,
-        });
-        let res = unsafe {
-            sys::xTaskCreatePinnedToCore(
-                Some(audio_task),
-                "AwedioBackend\0".as_bytes().as_ptr() as *const i8,
-                stack_size,
-                Box::into_raw(args) as *mut c_void,
-                task_priority,
-                null_mut(),
-                pinned_core_id,
-            )
+        let stack_size = self.stack_size as usize;
+        let priority: u8 = self.task_priority.try_into().unwrap();
+        let pin_to_core = self.pin_to_core;
+        let orig_spawn_config = ThreadSpawnConfiguration::get().unwrap_or_default();
+        let new_config = ThreadSpawnConfiguration {
+            name: Some("AwedioBackend\0".as_bytes()),
+            stack_size,
+            priority,
+            inherit: true,
+            pin_to_core,
         };
-
-        // https://github.com/esp-rs/esp-idf-sys/issues/130
-        // https://github.com/espressif/esp-idf/blob/60b90c5144267ce087287c099172fa5c8d374a54/components/freertos/include/freertos/projdefs.h#L51        const PD_PASS = 1;
-        const PD_PASS: i32 = 1;
-        if res != PD_PASS {
-            panic!("Failed to start audio backend: {}", res);
-        }
+        new_config
+            .set()
+            .expect("a valid stack size and priority for thread spawn");
+        std::thread::spawn(|| audio_task(self, renderer));
+        orig_spawn_config
+            .set()
+            .expect("original spawn config is valid");
         manager
     }
 }
 
-extern "C" fn audio_task(arg: *mut c_void) {
+fn audio_task(backend: Esp32Backend, mut renderer: Renderer) {
     const SAMPLE_SIZE: usize = std::mem::size_of::<i16>();
-    let mut task_args: Box<TaskArgs> = unsafe { Box::from_raw(arg as *mut TaskArgs) };
-    let mut driver = task_args.backend.driver;
-    let channel_count = task_args.backend.channel_count as usize;
-    let num_frames_per_write = task_args.backend.num_frames_per_write;
+    let mut driver = backend.driver;
+    let channel_count = backend.channel_count as usize;
+    let num_frames_per_write = backend.num_frames_per_write;
     let mut buf = vec![0_i16; num_frames_per_write * channel_count];
     let pause_time = Duration::from_millis(20);
     let mut stopped = true;
@@ -126,14 +111,14 @@ extern "C" fn audio_task(arg: *mut c_void) {
     loop {
         #[cfg(feature = "report-render-time")]
         let start = Instant::now();
-        task_args.renderer.on_start_of_batch();
+        renderer.on_start_of_batch();
         #[cfg(feature = "report-render-time")]
         let end_start_of_batch = Instant::now();
         let mut paused = false;
         let mut finished = false;
         let mut have_data = true;
         for i in 0..buf.len() {
-            let sample = match task_args.renderer.next_sample() {
+            let sample = match renderer.next_sample() {
                 awedio::NextSample::Sample(s) => s,
                 awedio::NextSample::MetadataChanged => {
                     unreachable!("we do not change the metadata of the renderer")
@@ -172,7 +157,7 @@ extern "C" fn audio_task(arg: *mut c_void) {
                 samples_rendered_since_report += buf.len();
                 if end.duration_since(last_report) > Duration::from_secs(1) {
                     let budget_micros = samples_rendered_since_report as f32 * 1_000_000.0
-                        / task_args.backend.sample_rate as f32
+                        / backend.sample_rate as f32
                         / channel_count as f32;
                     let percent_budget =
                         render_time_since_report.as_micros() as f32 / budget_micros * 100.0;
@@ -217,7 +202,6 @@ extern "C" fn audio_task(arg: *mut c_void) {
     driver
         .tx_disable()
         .expect("tx_disable should always succeed");
-    unsafe { sys::vTaskDelete(null_mut()) }
 }
 
 /// Long enough we should not expect to ever return.

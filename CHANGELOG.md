@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- refactor!: use thread spawn instead of creating a task
 - feat!: update to ESP-IDF v5 and new I2S API in hal
 - refactor!: do not set a default for num_frames_per_write
 - fix: use new name of library in task name
