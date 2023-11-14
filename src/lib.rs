@@ -1,7 +1,11 @@
 #![warn(missing_docs)]
 #![doc = include_str!("../README.md")]
 
+use esp_idf_hal as hal;
+use esp_idf_hal::sys;
+
 use awedio::{manager::Manager, manager::Renderer, Sound};
+use hal::delay::TickType;
 use std::ffi::c_void;
 use std::ptr::null_mut;
 use std::time::Duration;
@@ -9,14 +13,13 @@ use std::time::Duration;
 use std::time::Instant;
 
 /// An ESP32 backend for the I2S peripheral for ESP-IDF.
-#[derive(Copy, Clone)]
 pub struct Esp32Backend {
+    /// The driver to write sound data to.
+    pub driver: hal::i2s::I2sDriver<'static, hal::i2s::I2sTx>,
     /// The number of channels. 1 for mono, 2 for stereo...
     pub channel_count: u16,
     /// The number of samples per second.
     pub sample_rate: u32,
-    /// The I2S peripheral port number to write samples to. Defaults to 0.
-    pub i2s_port_num: u32,
     /// The size in frames of the samples buffer given to each call to I2S
     /// write.
     pub num_frames_per_write: usize,
@@ -41,18 +44,19 @@ impl Esp32Backend {
     /// Stack size can be substantially lower if not decoding MP3s. This should
     /// be improved in the future.
     pub fn with_defaults(
+        driver: hal::i2s::I2sDriver<'static, hal::i2s::I2sTx>,
         channel_count: u16,
         sample_rate: u32,
         num_frames_per_write: usize,
     ) -> Self {
         Self {
+            driver,
             channel_count,
             sample_rate,
-            i2s_port_num: 0,
             num_frames_per_write,
             stack_size: 30000,
             task_priority: 19,
-            pinned_core_id: esp_idf_sys::tskNO_AFFINITY as i32,
+            pinned_core_id: sys::tskNO_AFFINITY as i32,
         }
     }
 }
@@ -67,27 +71,28 @@ impl Esp32Backend {
     /// sent to the returned Manager and write them to I2S.
     ///
     /// The task stops if the Manager and all of its clones are dropped.
-    /// The user is responsible for setting up the I2S port before calling start
-    /// (e.g. via esp_idf_sys::i2s_driver_install and esp_idf_sys::i2s_set_pin)
-    pub fn start(&mut self) -> Manager {
+    pub fn start(self) -> Manager {
         let (manager, mut renderer) = Manager::new();
         renderer.set_output_channel_count_and_sample_rate(self.channel_count, self.sample_rate);
         let awedio::NextSample::MetadataChanged = renderer.next_sample() else {
             panic!("MetadataChanged expected but not received.");
         };
+        let stack_size = self.stack_size;
+        let task_priority = self.task_priority;
+        let pinned_core_id = self.pinned_core_id;
         let args = Box::new(TaskArgs {
-            backend: *self,
+            backend: self,
             renderer,
         });
         let res = unsafe {
-            esp_idf_sys::xTaskCreatePinnedToCore(
+            sys::xTaskCreatePinnedToCore(
                 Some(audio_task),
                 "AwedioBackend\0".as_bytes().as_ptr() as *const i8,
-                self.stack_size,
+                stack_size,
                 Box::into_raw(args) as *mut c_void,
-                self.task_priority,
+                task_priority,
                 null_mut(),
-                self.pinned_core_id,
+                pinned_core_id,
             )
         };
 
@@ -104,12 +109,12 @@ impl Esp32Backend {
 extern "C" fn audio_task(arg: *mut c_void) {
     const SAMPLE_SIZE: usize = std::mem::size_of::<i16>();
     let mut task_args: Box<TaskArgs> = unsafe { Box::from_raw(arg as *mut TaskArgs) };
-    let i2s_port_num = task_args.backend.i2s_port_num;
+    let mut driver = task_args.backend.driver;
     let channel_count = task_args.backend.channel_count as usize;
     let num_frames_per_write = task_args.backend.num_frames_per_write;
     let mut buf = vec![0_i16; num_frames_per_write * channel_count];
     let pause_time = Duration::from_millis(20);
-    let mut stopped = false;
+    let mut stopped = true;
 
     #[cfg(feature = "report-render-time")]
     let mut render_time_since_report = Duration::ZERO;
@@ -156,7 +161,7 @@ extern "C" fn audio_task(arg: *mut c_void) {
         if have_data {
             if stopped {
                 stopped = false;
-                unsafe { esp_idf_sys::i2s_start(i2s_port_num) };
+                driver.tx_enable().expect("tx_enable should always succeed");
             }
 
             #[cfg(feature = "report-render-time")]
@@ -184,21 +189,12 @@ extern "C" fn audio_task(arg: *mut c_void) {
                 }
             }
 
-            let mut bytes_written: usize = 0;
-            let result = unsafe {
-                esp_idf_sys::i2s_write(
-                    i2s_port_num,
-                    buf.as_ptr() as *const c_void,
-                    buf.len() * SAMPLE_SIZE,
-                    &mut bytes_written as *mut _,
-                    u32::MAX,
-                )
+            let byte_slice = unsafe {
+                core::slice::from_raw_parts(buf.as_ptr() as *const u8, buf.len() * SAMPLE_SIZE)
             };
-            assert!(result == esp_idf_sys::ESP_OK, "error writing i2s data");
-            assert!(
-                bytes_written as usize == buf.len() * SAMPLE_SIZE,
-                "not all bytes written in i2s_write call"
-            )
+            driver
+                .write_all(byte_slice, BLOCK_TIME.into())
+                .expect("I2sDriver::write_all should succeed");
         }
 
         if finished {
@@ -207,7 +203,9 @@ extern "C" fn audio_task(arg: *mut c_void) {
         if paused {
             if !stopped {
                 stopped = true;
-                unsafe { esp_idf_sys::i2s_stop(i2s_port_num) };
+                driver
+                    .tx_disable()
+                    .expect("tx_disable should always succeed");
             }
             // TODO instead of sleeping and polling, have the Renderer
             // notify when a new sound is added and wait for that.
@@ -216,6 +214,11 @@ extern "C" fn audio_task(arg: *mut c_void) {
         }
     }
 
-    unsafe { esp_idf_sys::i2s_stop(i2s_port_num) };
-    unsafe { esp_idf_sys::vTaskDelete(null_mut()) }
+    driver
+        .tx_disable()
+        .expect("tx_disable should always succeed");
+    unsafe { sys::vTaskDelete(null_mut()) }
 }
+
+/// Long enough we should not expect to ever return.
+const BLOCK_TIME: TickType = TickType::new(100_000_000);
