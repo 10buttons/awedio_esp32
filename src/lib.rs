@@ -67,7 +67,10 @@ impl Esp32Backend {
     pub fn start(self) -> Manager {
         let (manager, mut renderer) = Manager::new();
         renderer.set_output_channel_count_and_sample_rate(self.channel_count, self.sample_rate);
-        let awedio::NextSample::MetadataChanged = renderer.next_sample() else {
+        let awedio::NextSample::MetadataChanged = renderer
+            .next_sample()
+            .expect("renderer never returns an error")
+        else {
             panic!("MetadataChanged expected but not received.");
         };
         let stack_size = self.stack_size as usize;
@@ -118,7 +121,10 @@ fn audio_task(backend: Esp32Backend, mut renderer: Renderer) {
         let mut finished = false;
         let mut have_data = true;
         for i in 0..buf.len() {
-            let sample = match renderer.next_sample() {
+            let sample = match renderer
+                .next_sample()
+                .expect("renderer never returns an error")
+            {
                 awedio::NextSample::Sample(s) => s,
                 awedio::NextSample::MetadataChanged => {
                     unreachable!("we do not change the metadata of the renderer")
