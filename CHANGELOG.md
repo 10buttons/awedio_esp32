@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.0 - 2023-12-08
+
+- [**breaking**] update awedio to v0.3.1
+
 ## 0.3.0 - 2023-11-14
 
 - refactor!: use thread spawn instead of creating a task
