@@ -79,15 +79,19 @@ impl Esp32Backend {
         let orig_spawn_config = ThreadSpawnConfiguration::get().unwrap_or_default();
         let new_config = ThreadSpawnConfiguration {
             name: Some("AwedioBackend\0".as_bytes()),
-            stack_size,
+            stack_size, // does not do anything
             priority,
-            inherit: true,
+            inherit: false,
             pin_to_core,
         };
         new_config
             .set()
             .expect("a valid stack size and priority for thread spawn");
-        std::thread::spawn(|| audio_task(self, renderer));
+        std::thread::Builder::new()
+            .stack_size(stack_size)
+            .name("AwedioBackend".to_owned())
+            .spawn(|| audio_task(self, renderer))
+            .expect("spawn should succeed");
         orig_spawn_config
             .set()
             .expect("original spawn config is valid");
