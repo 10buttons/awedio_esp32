@@ -1,6 +1,6 @@
 [package]
 name = "awedio_esp32"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 authors = ["Ben Hansen <bh@benhansen.io>"]
 description = "ESP32 backend for the awedio audio playback library"

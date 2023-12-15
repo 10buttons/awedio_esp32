@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+Unreleased changes, if any, can be listed using `git log` or `git cliff -u`.
+
+## 0.4.1 - 2023-12-15
+
+### Bug Fixes
+
+- Stack size was not being set properly
+
 ## 0.4.0 - 2023-12-08
 
 - [**breaking**] update awedio to v0.3.1
