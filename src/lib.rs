@@ -3,7 +3,7 @@
 
 use esp_idf_hal as hal;
 
-use awedio::{manager::Manager, manager::Renderer, Sound};
+use awedio::{manager::BackendSource, manager::Manager};
 use hal::delay::TickType;
 use hal::task::thread::ThreadSpawnConfiguration;
 use std::time::Duration;
@@ -65,11 +65,20 @@ impl Esp32Backend {
     ///
     /// The task stops if the Manager and all of its clones are dropped.
     pub fn start(self) -> Manager {
-        let (manager, mut renderer) = Manager::new();
-        renderer.set_output_channel_count_and_sample_rate(self.channel_count, self.sample_rate);
-        let awedio::NextSample::MetadataChanged = renderer
+        let (manager, renderer) = Manager::new();
+        self.start_with_backend_source(Box::new(renderer));
+
+        manager
+    }
+
+    /// Provide a custom backend_source, normally by wrapping a renderer
+    /// returned from Manager::new.
+    pub fn start_with_backend_source(self, mut backend_source: Box<dyn BackendSource>) {
+        backend_source
+            .set_output_channel_count_and_sample_rate(self.channel_count, self.sample_rate);
+        let awedio::NextSample::MetadataChanged = backend_source
             .next_sample()
-            .expect("renderer never returns an error")
+            .expect("backend_source should never return an error")
         else {
             panic!("MetadataChanged expected but not received.");
         };
@@ -90,16 +99,15 @@ impl Esp32Backend {
         std::thread::Builder::new()
             .stack_size(stack_size)
             .name("AwedioBackend".to_owned())
-            .spawn(|| audio_task(self, renderer))
+            .spawn(|| audio_task(self, backend_source))
             .expect("spawn should succeed");
         orig_spawn_config
             .set()
             .expect("original spawn config is valid");
-        manager
     }
 }
 
-fn audio_task(backend: Esp32Backend, mut renderer: Renderer) {
+fn audio_task(backend: Esp32Backend, mut backend_source: Box<dyn BackendSource>) {
     const SAMPLE_SIZE: usize = std::mem::size_of::<i16>();
     let mut driver = backend.driver;
     let channel_count = backend.channel_count as usize;
@@ -118,16 +126,16 @@ fn audio_task(backend: Esp32Backend, mut renderer: Renderer) {
     loop {
         #[cfg(feature = "report-render-time")]
         let start = Instant::now();
-        renderer.on_start_of_batch();
+        backend_source.on_start_of_batch();
         #[cfg(feature = "report-render-time")]
         let end_start_of_batch = Instant::now();
         let mut paused = false;
         let mut finished = false;
         let mut have_data = true;
         for i in 0..buf.len() {
-            let sample = match renderer
+            let sample = match backend_source
                 .next_sample()
-                .expect("renderer never returns an error")
+                .expect("backend source should never return an error")
             {
                 awedio::NextSample::Sample(s) => s,
                 awedio::NextSample::MetadataChanged => {
