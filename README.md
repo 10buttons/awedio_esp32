@@ -47,8 +47,8 @@ let manager = backend.start()
 ```
 
 In order to get the `rmp3` native dependency to compile for xtensa chips
-(if the mp3 feature is enabled) you may need to export the following variables
-(adjust for your target):
+(if the rmp3-mp3 feature is enabled) you may need to export the following
+variables (adjust for your target):
 `export CROSS_COMPILE=xtensa-esp32s3-elf; export CFLAGS=-mlongcalls`
 
 ## Motivation
